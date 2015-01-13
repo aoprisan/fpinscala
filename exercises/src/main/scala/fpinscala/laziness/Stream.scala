@@ -38,7 +38,6 @@ trait Stream[+A] {
 
   def forAll(p: A => Boolean): Boolean = this.foldRight(true)((e,acc) => p(e) && acc)
 
-  def startsWith[B](s: Stream[B]): Boolean = sys.error("todo")
 
   def toList: List[A] = this match {
     case Empty => List.empty
@@ -61,11 +60,53 @@ trait Stream[+A] {
     foldRight(empty[B])((e,acc) => f(e).append(acc))
 
 
-  def map_1[B](f: A => B): Stream[B] = Stream.unfold(this){
+  def mapViaUnfold[B](f: A => B): Stream[B] = Stream.unfold(this){
     case Cons(h,t) => Some(f(h()),t())
     case _ => None
   }
 
+  def takeViaUnfold(n: Int): Stream[A] = Stream.unfold((this,n)) {
+    case (Cons(h,t),n) if n >= 0 => Some(h(),(t(), n -1))
+    case _ => None
+  }
+
+  def takeWhileViaUnfold(f: A => Boolean) = Stream.unfold(this) {
+    case Cons(h,t) if f(h()) => Some(h(),t())
+    case _ => None
+  }
+
+  def zipWith[B,C](s: Stream[B])(f: (A,B) => C):Stream[C] = Stream.unfold((this,s)){
+    case (Cons(mh,mt), Cons(oh,ot)) => Some(f(mh(),oh()),(mt(),ot()))
+    case _ => None
+  }
+
+  def zipAll[B](s2: Stream[B]): Stream[(Option[A],Option[B])] = Stream.unfold((this,s2)){
+    case (Cons(mh,mt), Cons(oh,ot)) => Some((Some(mh()) -> Some(oh()), (mt(),ot())))
+    case (Cons(mh,mt), Empty) => Some((Some(mh()) -> None, (mt(),empty)))
+    case (Empty, Cons(oh,ot)) => Some((None -> Some(oh()), (empty,ot())))
+    case _ => None
+  }
+
+  def startsWith[A](s: Stream[A]): Boolean = zipAll(s).takeWhile {
+    case (Some(m), Some(sub)) => true
+    case _ => false
+  }.map {
+    case (Some(m), Some(sub)) => (m -> sub)
+  }.forAll {
+    case (m,sub) => m == sub
+  }
+
+  def tails: Stream[Stream[A]] = Stream.unfold(this){
+    case Empty => None
+    case s => Some( s -> s.drop(1) )
+  }.append(Stream(empty))
+
+
+  def scanRight[B](z: => B)(f: (A, => B) => B): Stream[B] = this.foldRight((z,Stream(z)))((e,b) => {
+    val (v,acc) = b
+    val newv = f(e,v)
+    newv -> cons(newv,acc)
+  })._2
 }
 case object Empty extends Stream[Nothing]
 case class Cons[+A](h: () => A, t: () => Stream[A]) extends Stream[A]
